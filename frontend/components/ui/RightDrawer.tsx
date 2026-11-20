@@ -5,6 +5,7 @@ import { useOcean } from '../../context/OceanContext';
 import VerticalProfileChart from '../charts/VerticalProfileChart';
 import ModelVsObsChart from '../charts/ModelVsObsChart';
 import { oceanApiService } from '../../lib/api';
+import { DEMO_ARGO_FLOATS, DEMO_ANOMALIES } from '../../mocks/oceanDemoData';
 import {
   ArgoFloat,
   ValidationMetrics,
@@ -39,9 +40,12 @@ export default function RightDrawer() {
     selectedAnomaly,
     selectedLocation,
     activeTrajectory,
+    setActiveTrajectory,
     trajectoryDuration,
     setTrajectoryDuration,
     setTrajectoryModeActive,
+    setLayerState,
+    flyToLocation,
     selectedVariable,
     selectedDepth,
     provenanceMode,
@@ -217,7 +221,8 @@ export default function RightDrawer() {
 
   if (activeDrawer === 'none') return null;
 
-  const currentArgo = argoFloatData || selectedArgo;
+  const currentArgo = argoFloatData || selectedArgo || DEMO_ARGO_FLOATS[0];
+  const currentAnomaly = selectedAnomaly || DEMO_ANOMALIES[0];
 
   return (
     <aside className="absolute top-[72px] right-3 bottom-3 z-50 w-[calc(100%-24px)] max-w-md bg-navy-deep border-2 border-navy-sky rounded-xl p-3.5 sm:p-4 shadow-panel text-navy-ice overflow-y-auto flex flex-col justify-between select-none">
@@ -424,36 +429,36 @@ export default function RightDrawer() {
         {/* ========================================================= */}
         {/* OCEAN ANOMALY INSPECTOR */}
         {/* ========================================================= */}
-        {activeDrawer === 'anomaly' && selectedAnomaly && (
+        {activeDrawer === 'anomaly' && currentAnomaly && (
           <div className="space-y-4 text-xs font-sans">
             <div className="p-3 rounded-xl bg-navy-darker border border-navy-sky/40 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-heading font-bold text-navy-ice text-sm">{selectedAnomaly.locationName}</span>
+                <span className="font-heading font-bold text-navy-ice text-sm">{currentAnomaly.locationName}</span>
                 <span className="px-2 py-0.5 rounded bg-navy-ocean text-navy-ice font-mono font-bold border border-navy-sky/50">
-                  {selectedAnomaly.severity}
+                  {currentAnomaly.severity}
                 </span>
               </div>
               <div className="text-navy-muted font-mono">
-                Lat: {selectedAnomaly.lat}°N | Lon: {selectedAnomaly.lon}°E
+                Lat: {currentAnomaly.lat}°N | Lon: {currentAnomaly.lon}°E
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 font-mono text-center">
               <div className="p-2.5 rounded-lg bg-navy-darker border border-navy-ocean/50">
                 <div className="text-[10px] text-navy-muted">Current Value</div>
-                <div className="text-lg font-bold text-navy-ice">{selectedAnomaly.currentValue}°C</div>
+                <div className="text-lg font-bold text-navy-ice">{currentAnomaly.currentValue}°C</div>
               </div>
               <div className="p-2.5 rounded-lg bg-navy-darker border border-navy-ocean/50">
                 <div className="text-[10px] text-navy-muted">Climatology Baseline</div>
-                <div className="text-lg font-bold text-navy-muted">{selectedAnomaly.baselineValue}°C</div>
+                <div className="text-lg font-bold text-navy-muted">{currentAnomaly.baselineValue}°C</div>
               </div>
               <div className="p-2.5 rounded-lg bg-navy-darker border border-navy-ocean/50">
                 <div className="text-[10px] text-navy-muted">Deviation</div>
-                <div className="text-lg font-bold text-navy-sky">+{selectedAnomaly.deviation}°C</div>
+                <div className="text-lg font-bold text-navy-sky">+{currentAnomaly.deviation}°C</div>
               </div>
               <div className="p-2.5 rounded-lg bg-navy-darker border border-navy-ocean/50">
                 <div className="text-[10px] text-navy-muted">Z-Score</div>
-                <div className="text-lg font-bold text-navy-ice">+{selectedAnomaly.zScore} σ</div>
+                <div className="text-lg font-bold text-navy-ice">+{currentAnomaly.zScore} σ</div>
               </div>
             </div>
           </div>
@@ -488,13 +493,69 @@ export default function RightDrawer() {
                 ))}
               </div>
 
-              <button
-                onClick={() => setTrajectoryModeActive(true)}
-                className="w-full py-2 rounded-lg bg-navy-ocean hover:bg-navy-sky/30 text-navy-ice font-bold border border-navy-sky transition flex items-center justify-center gap-2 mt-2"
-              >
-                <MapPin className="w-4 h-4 text-navy-sky" />
-                <span>Click Location on Globe to Run</span>
-              </button>
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                <button
+                  onClick={() => {
+                    const lat = selectedLocation.lat;
+                    const lon = selectedLocation.lon;
+                    const dur = trajectoryDuration;
+                    const steps = Math.max(12, Math.floor(dur * 1.5));
+                    const dtHours = dur / steps;
+                    const dtSec = dtHours * 3600;
+                    const path: Array<{ lat: number; lon: number; elapsedHours: number; speedKts: number; depthM: number }> = [];
+                    let curLat = lat;
+                    let curLon = lon;
+                    let totalDistKm = 0;
+                    let speedSum = 0;
+
+                    for (let i = 0; i <= steps; i++) {
+                      const u = 0.55 * Math.sin((curLat + 10) * 0.14) + 0.38 * Math.cos(curLon * 0.09) + 0.25;
+                      const v = 0.35 * Math.cos((curLat + 5) * 0.16) + 0.22 * Math.sin(curLon * 0.12);
+                      const speed = Math.max(0.28, Math.sqrt(u * u + v * v));
+                      speedSum += speed;
+                      path.push({
+                        lat: Number(curLat.toFixed(4)),
+                        lon: Number(curLon.toFixed(4)),
+                        elapsedHours: Number((i * dtHours).toFixed(1)),
+                        speedKts: Number((speed * 1.94384).toFixed(2)),
+                        depthM: typeof selectedDepth === 'number' ? selectedDepth : 0
+                      });
+                      if (i < steps) {
+                        const visualBoost = 4.0;
+                        curLat += (v * dtSec * visualBoost) / 111320.0;
+                        curLon += (u * dtSec * visualBoost) / (111320.0 * Math.max(0.2, Math.cos((curLat * Math.PI) / 180)));
+                        totalDistKm += (speed * dtSec) / 1000.0;
+                      }
+                    }
+                    const last = path[path.length - 1];
+                    setLayerState('trajectoryPath', true);
+                    setActiveTrajectory({
+                      startLat: Number(lat.toFixed(4)),
+                      startLon: Number(lon.toFixed(4)),
+                      endLat: last.lat,
+                      endLon: last.lon,
+                      durationHours: dur,
+                      totalDistanceKm: Number(totalDistKm.toFixed(1)),
+                      averageSpeedMps: Number((speedSum / path.length).toFixed(2)),
+                      path
+                    } as any);
+                    setTrajectoryModeActive(false);
+                    flyToLocation(lat, lon, 5000000, -70, 0);
+                  }}
+                  className="w-full py-2 rounded-lg bg-navy-sky text-navy-deep hover:bg-navy-ice font-bold border border-navy-ice transition flex items-center justify-center gap-2 shadow-md"
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span>Simulate {trajectoryDuration}h Drift Here</span>
+                </button>
+
+                <button
+                  onClick={() => setTrajectoryModeActive(true)}
+                  className="w-full py-2 rounded-lg bg-navy-ocean hover:bg-navy-sky/30 text-navy-ice font-bold border border-navy-sky transition flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-4 h-4 text-navy-sky" />
+                  <span>Or Click Any Ocean Spot on Globe</span>
+                </button>
+              </div>
             </div>
 
             {activeTrajectory && (

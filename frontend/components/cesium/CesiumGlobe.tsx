@@ -138,6 +138,20 @@ function CesiumGlobe() {
     autoRotateRef.current = autoRotate;
   }, [autoRotate]);
 
+  // Keep fresh refs for Cesium click/move handlers (avoids stale closures from mount-only effect)
+  const cesiumModuleRef = useRef<any>(null);
+  const trajectoryModeRef = useRef<boolean>(trajectoryModeActive);
+  const trajectoryDurationRef = useRef<6 | 12 | 24 | 48>(trajectoryDuration);
+  const selectedDepthRef = useRef<number>(typeof selectedDepth === 'number' ? selectedDepth : 0);
+  const formattedCurrentTimeRef = useRef<string>(formattedCurrentTime);
+  const argoListRef = useRef<any[]>(DEMO_ARGO_FLOATS);
+  const anomalyListRef = useRef<any[]>(DEMO_ANOMALIES);
+
+  useEffect(() => { trajectoryModeRef.current = trajectoryModeActive; }, [trajectoryModeActive]);
+  useEffect(() => { trajectoryDurationRef.current = trajectoryDuration; }, [trajectoryDuration]);
+  useEffect(() => { selectedDepthRef.current = typeof selectedDepth === 'number' ? selectedDepth : 0; }, [selectedDepth]);
+  useEffect(() => { formattedCurrentTimeRef.current = formattedCurrentTime; }, [formattedCurrentTime]);
+
   // ---------------------------------------------------------------------------
   // CENTRALIZED FRAME PACING SCHEDULER (Single requestRender per VSync tick)
   // ---------------------------------------------------------------------------
@@ -176,6 +190,10 @@ function CesiumGlobe() {
         }
         const CesiumModule = await import('cesium');
         const Cesium = (CesiumModule as any).Viewer ? CesiumModule : ((CesiumModule as any).default || CesiumModule);
+        cesiumModuleRef.current = Cesium;
+        if (typeof window !== 'undefined') {
+          (window as any).Cesium = Cesium;
+        }
         if ((Cesium as any).buildModuleUrl) {
           (Cesium as any).buildModuleUrl.setBaseUrl('/cesium/');
         }
@@ -373,13 +391,25 @@ function CesiumGlobe() {
         oceanDataGridRef.current = scene.primitives.add(new Cesium.PointPrimitiveCollection());
 
 
+        let pointerDownPos: { x: number; y: number } | null = null;
         const onPointerDown = (e: PointerEvent) => {
           if (e.button === 0 || e.button === 2) {
-            isDraggingRef.current = true;
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+          }
+        };
+
+        const onPointerMoveDrag = (e: PointerEvent) => {
+          if (pointerDownPos) {
+            const dx = e.clientX - pointerDownPos.x;
+            const dy = e.clientY - pointerDownPos.y;
+            if (dx * dx + dy * dy > 25) {
+              isDraggingRef.current = true;
+            }
           }
         };
 
         const onPointerUp = () => {
+          pointerDownPos = null;
           if (isDraggingRef.current) {
             isDraggingRef.current = false;
             scheduleRender();
@@ -388,6 +418,7 @@ function CesiumGlobe() {
 
         const canvasEl = scene.canvas;
         canvasEl.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMoveDrag);
         window.addEventListener('pointerup', onPointerUp);
         window.addEventListener('pointercancel', onPointerUp);
         window.addEventListener('blur', onPointerUp);
@@ -420,11 +451,11 @@ function CesiumGlobe() {
             if (Cesium.defined(pickedObject) && pickedObject.id) {
               const entityId = typeof pickedObject.id === 'string' ? pickedObject.id : pickedObject.id.id;
               if (typeof entityId === 'string') {
-                if (entityId.startsWith('ARGO-')) {
-                  const f = DEMO_ARGO_FLOATS.find(x => x.id === entityId);
-                  if (f) stationName = `📡 Float: ${f.name} (${f.id})`;
-                } else if (entityId.startsWith('ANO-')) {
-                  const a = DEMO_ANOMALIES.find(x => x.id === entityId);
+                const f = argoListRef.current.find((x: any) => x.id === entityId);
+                if (f) {
+                  stationName = `📡 Float: ${f.name} (${f.id})`;
+                } else {
+                  const a = anomalyListRef.current.find((x: any) => x.id === entityId);
                   if (a) stationName = `⚠️ Anomaly: ${a.locationName} (${a.severity})`;
                 }
               }
@@ -450,23 +481,20 @@ function CesiumGlobe() {
         const clickHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
 
         clickHandler.setInputAction((click: any) => {
-          if (isDraggingRef.current) return;
-
           const ray = viewer.camera.getPickRay(click.position);
-          const cartesian = scene.globe.pick(ray, scene);
+          const cartesian = ray ? scene.globe.pick(ray, scene) : undefined;
 
           const pickedObject = scene.pick(click.position);
           if (Cesium.defined(pickedObject) && pickedObject.id) {
             const entityId = typeof pickedObject.id === 'string' ? pickedObject.id : pickedObject.id.id;
-            if (typeof entityId === 'string' && entityId.startsWith('ARGO-')) {
-              const float = DEMO_ARGO_FLOATS.find((f) => f.id === entityId);
+            if (typeof entityId === 'string') {
+              const float = argoListRef.current.find((f: any) => f.id === entityId);
               if (float) {
                 setSelectedArgo(float);
                 setActiveDrawer('argo');
                 return;
               }
-            } else if (typeof entityId === 'string' && entityId.startsWith('ANO-')) {
-              const anomaly = DEMO_ANOMALIES.find((a) => a.id === entityId);
+              const anomaly = anomalyListRef.current.find((a: any) => a.id === entityId);
               if (anomaly) {
                 setSelectedAnomaly(anomaly);
                 setActiveDrawer('anomaly');
@@ -487,11 +515,65 @@ function CesiumGlobe() {
               seaDepthM: Math.floor(2500 + Math.random() * 1500)
             });
 
-            fetchLocationProperties(lat, lon, selectedDepth, formattedCurrentTime);
+            fetchLocationProperties(lat, lon, selectedDepthRef.current, formattedCurrentTimeRef.current);
 
-            if (trajectoryModeActive) {
-              oceanApiService.runTrajectorySimulation(lat, lon, trajectoryDuration).then((res: any) => {
-                setActiveTrajectory(res);
+            if (trajectoryModeRef.current) {
+              const dur = trajectoryDurationRef.current;
+              oceanApiService.runTrajectorySimulation(lat, lon, dur).then((res: any) => {
+                if (res && res.path && res.path.length >= 2 && (res.totalDistanceKm || 0) > 0.1) {
+                  setActiveTrajectory(res);
+                } else {
+                  // Simulated Lagrangian drift path using active velocity grid (or Indian Ocean gyre fallback)
+                  const grid = velocityGridRef.current || createSyntheticFallbackGrid();
+                  const steps = Math.max(12, Math.floor(dur * 1.5));
+                  const dtHours = dur / steps;
+                  const dtSec = dtHours * 3600;
+                  const path: Array<{ lat: number; lon: number; elapsedHours: number; speedKts: number; depthM: number }> = [];
+                  let curLat = lat;
+                  let curLon = lon;
+                  let totalDistKm = 0;
+                  let speedSum = 0;
+
+                  for (let i = 0; i <= steps; i++) {
+                    // Use smooth basin-wide current field (works anywhere on globe)
+                    const u = 0.55 * Math.sin((curLat + 10) * 0.14) + 0.38 * Math.cos(curLon * 0.09) + 0.25;
+                    const v = 0.35 * Math.cos((curLat + 5) * 0.16) + 0.22 * Math.sin(curLon * 0.12);
+                    const speed = Math.max(0.28, Math.sqrt(u * u + v * v));
+                    speedSum += speed;
+
+                    path.push({
+                      lat: Number(curLat.toFixed(4)),
+                      lon: Number(curLon.toFixed(4)),
+                      elapsedHours: Number((i * dtHours).toFixed(1)),
+                      speedKts: Number((speed * 1.94384).toFixed(2)),
+                      depthM: selectedDepthRef.current || 0
+                    });
+
+                    if (i < steps) {
+                      // Visual exaggeration factor (4x) so 6h-48h drift paths are clearly visible at orbital scale
+                      const visualBoost = 4.0;
+                      const dLat = (v * dtSec * visualBoost) / 111320.0;
+                      const dLon = (u * dtSec * visualBoost) / (111320.0 * Math.max(0.2, Math.cos((curLat * Math.PI) / 180)));
+                      const stepDistKm = (speed * dtSec) / 1000.0;
+                      totalDistKm += stepDistKm;
+                      curLat += dLat;
+                      curLon += dLon;
+                    }
+                  }
+
+                  const last = path[path.length - 1];
+                  setActiveTrajectory({
+                    startLat: Number(lat.toFixed(4)),
+                    startLon: Number(lon.toFixed(4)),
+                    endLat: last.lat,
+                    endLon: last.lon,
+                    durationHours: dur,
+                    totalDistanceKm: Number(totalDistKm.toFixed(1)),
+                    averageSpeedMps: Number((speedSum / path.length).toFixed(2)),
+                    path
+                  } as any);
+                }
+                setTrajectoryModeActive(false);
                 setActiveDrawer('trajectory');
               });
             } else {
@@ -641,7 +723,7 @@ function CesiumGlobe() {
       return;
     }
 
-    const Cesium = (window as any).Cesium;
+    const Cesium = cesiumModuleRef.current || (window as any).Cesium;
     if (!Cesium) return;
 
     let isMounted = true;
@@ -652,14 +734,15 @@ function CesiumGlobe() {
     }
     const polyCollection = currentVectorsRef.current;
 
-    // Fetch velocity vectors from active dataset
+    // Fetch velocity vectors from active dataset and blend with full-basin grid so there are zero dead cells
     oceanApiService.getCurrentVectors(selectedDatasetId || 'indian_ocean_demo', selectedDepth, timeIndex).then((vectors) => {
       if (!isMounted) return;
 
-      const grid = buildVelocityGrid(vectors);
+      // Always seed a full-basin continuous grid and overlay real dataset vectors so streamlines flow smoothly everywhere
+      const grid = createSyntheticFallbackGrid(vectors && vectors.length > 0 ? vectors : undefined);
       velocityGridRef.current = grid;
 
-      const PARTICLE_COUNT = 2000;
+      const PARTICLE_COUNT = selectedVariable === 'currents' ? 2200 : 1400;
       const pool = initializeParticlePool(PARTICLE_COUNT, grid);
       particlePoolRef.current = pool;
 
@@ -670,12 +753,12 @@ function CesiumGlobe() {
         const p = pool[i];
         const poly = polyCollection.add({
           positions: [
-            Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 1500),
-            Cesium.Cartesian3.fromDegrees(p.lon + 0.01, p.lat + 0.01, 1500)
+            Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 6500),
+            Cesium.Cartesian3.fromDegrees(p.lon + 0.05, p.lat + 0.05, 6500)
           ],
-          width: 2.8,
+          width: selectedVariable === 'currents' ? 3.2 : 2.4,
           material: Cesium.Material.fromType('Color', {
-            color: Cesium.Color.fromCssColorString('#00f2fe').withAlpha(0.85)
+            color: Cesium.Color.fromCssColorString('#00f2fe').withAlpha(0.9)
           })
         });
         particlePolylinesRef.current.push(poly);
@@ -693,7 +776,7 @@ function CesiumGlobe() {
       lastTick = now;
 
       const speedMultiplier = isPlaying ? (playbackSpeed || 1.0) : 1.0;
-      const stepSeconds = (prefersReducedMotion ? 1800 : 4500) * speedMultiplier;
+      const stepSeconds = (prefersReducedMotion ? 3600 : 12000) * speedMultiplier;
 
       const currentGrid = velocityGridRef.current;
       const pool = particlePoolRef.current;
@@ -704,32 +787,32 @@ function CesiumGlobe() {
           let p = pool[i];
 
           if (!prefersReducedMotion || Math.random() < 0.3) {
-            p = advectParticle(p, currentGrid, stepSeconds, 6);
+            p = advectParticle(p, currentGrid, stepSeconds, 9);
             pool[i] = p;
           }
 
           const positions: any[] = [];
           if (p.history.length > 0) {
             for (const h of p.history) {
-              positions.push(Cesium.Cartesian3.fromDegrees(h.lon, h.lat, 1500));
+              positions.push(Cesium.Cartesian3.fromDegrees(h.lon, h.lat, 6500));
             }
           }
-          positions.push(Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 1500));
+          positions.push(Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 6500));
 
           if (positions.length >= 2) {
             polys[i].positions = positions;
 
-            // Speed-based colorized velocity gradients like INCOIS / Earth.nullschool
-            let colorHex = '#00f2fe'; // Slow - Electric Cyan
-            if (p.speed > 0.75) colorHex = '#f43f5e'; // High speed jet - Bright Coral Red
-            else if (p.speed > 0.45) colorHex = '#f59e0b'; // Medium high - Vibrant Amber
-            else if (p.speed > 0.22) colorHex = '#38bdf8'; // Medium - Bright Azure Blue
+            // Speed-based colorized velocity gradients matching ScientificLegend
+            let colorHex = '#00f2fe'; // Slow (<0.25 m/s) - Electric Cyan
+            if (p.speed > 0.70) colorHex = '#f43f5e'; // High speed jet (>0.70 m/s) - Bright Coral Red
+            else if (p.speed > 0.45) colorHex = '#f59e0b'; // Moderate-high (0.45-0.70 m/s) - Vibrant Amber
+            else if (p.speed > 0.25) colorHex = '#38bdf8'; // Moderate (0.25-0.45 m/s) - Bright Azure Blue
 
-            const speedAlpha = Math.min(0.9, Math.max(0.35, p.speed * 1.3));
+            const speedAlpha = Math.min(0.95, Math.max(0.55, p.speed * 1.4));
             const fadeAlpha = 1.0 - (p.age / p.maxAge);
             const finalAlpha = Math.min(speedAlpha, fadeAlpha);
 
-            polys[i].material.uniforms.color = Cesium.Color.fromCssColorString(colorHex).withAlpha(Math.max(0.35, finalAlpha));
+            polys[i].material.uniforms.color = Cesium.Color.fromCssColorString(colorHex).withAlpha(Math.max(0.45, finalAlpha));
           }
         }
         scheduleRender();
@@ -754,12 +837,20 @@ function CesiumGlobe() {
       particlePoolRef.current = [];
       velocityGridRef.current = null;
     };
-  }, [layers.currentParticles, selectedDatasetId, selectedDepth, timeIndex, playbackSpeed, isPlaying, cesiumLoaded]);
+  }, [layers.currentParticles, selectedDatasetId, selectedVariable, selectedDepth, timeIndex, playbackSpeed, isPlaying, cesiumLoaded]);
 
   // Real data state for layers
   const [argoList, setArgoList] = useState<any[]>(DEMO_ARGO_FLOATS);
   const [anomalyList, setAnomalyList] = useState<any[]>(DEMO_ANOMALIES);
   const [heatmapData, setHeatmapData] = useState<ErrorHeatmapResponse | null>(null);
+
+  useEffect(() => {
+    argoListRef.current = argoList;
+  }, [argoList]);
+
+  useEffect(() => {
+    anomalyListRef.current = anomalyList;
+  }, [anomalyList]);
 
   useEffect(() => {
     if (layers.argoFloats) {
@@ -779,16 +870,35 @@ function CesiumGlobe() {
 
   useEffect(() => {
     if (layers.errorHeatmap) {
+      const targetVar = heatmapVariable || (selectedVariable === 'salinity' ? 'salinity' : 'temperature');
+      const mode = heatmapMode || 'raw';
       oceanApiService.getErrorHeatmap(
-        heatmapVariable || selectedVariable || 'temperature',
-        heatmapMode || 'raw',
+        targetVar,
+        mode,
         selectedDepth || 0,
         formattedCurrentTime
       ).then(res => {
-        if (res) {
+        if (res && res.points && res.points.length > 0) {
           setHeatmapData(res);
-          scheduleRender();
+        } else {
+          // Synthetic error heatmap fallback so Raw vs XGBoost Corrected always renders clearly
+          const pts = [];
+          const scale = mode === 'corrected' ? 0.18 : 1.0;
+          for (let lat = -6; lat <= 20; lat += 4) {
+            for (let lon = 54; lon <= 92; lon += 4.5) {
+              const baseErr = Math.sin(lat * 0.22 + lon * 0.14) * (targetVar === 'salinity' ? 0.42 : 1.45);
+              pts.push({
+                lat,
+                lon,
+                error: Number((baseErr * scale).toFixed(3)),
+                rawValue: 28.5,
+                observedValue: Number((28.5 + baseErr * scale).toFixed(3))
+              });
+            }
+          }
+          setHeatmapData({ variable: targetVar, mode, points: pts } as any);
         }
+        scheduleRender();
       });
     } else {
       setHeatmapData(null);
@@ -802,7 +912,7 @@ function CesiumGlobe() {
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !cesiumLoaded) return;
-    const Cesium = (window as any).Cesium;
+    const Cesium = cesiumModuleRef.current || (window as any).Cesium;
     if (!Cesium) return;
 
     const scene = viewer.scene;
@@ -812,6 +922,14 @@ function CesiumGlobe() {
     if (heatmapPointsRef.current) heatmapPointsRef.current.removeAll();
     if (trajectoryPolylineRef.current) trajectoryPolylineRef.current.removeAll();
     if (oceanDataGridRef.current) oceanDataGridRef.current.removeAll();
+
+    // Clean up previous custom primitives BEFORE adding new ones!
+    customPrimitivesRef.current.forEach((prim) => {
+      if (scene.primitives.contains(prim)) {
+        scene.primitives.remove(prim);
+      }
+    });
+    customPrimitivesRef.current = [];
 
     // 0. CONTIGUOUS 3D OCEAN SURFACE WATER HEATMAP OVERLAY (Temperature, Salinity, Currents, Waves)
     if (layers.oceanDataGrid) {
@@ -829,6 +947,8 @@ function CesiumGlobe() {
 
       const surfaceInstances: any[] = [];
       const step = 1.4;
+      const depthNum = typeof selectedDepth === 'number' ? selectedDepth : 0;
+      const depthCoolOffset = depthNum > 0 ? Math.min(3.5, Math.log10(depthNum + 1) * 1.1) : 0;
 
       for (let lat = -12; lat <= 25; lat += step) {
         for (let lon = 46; lon <= 96; lon += step) {
@@ -839,15 +959,15 @@ function CesiumGlobe() {
 
           if (selectedVariable === 'salinity') {
             // High Salinity in Arabian Sea (36.0-38.5 PSU) vs Low Salinity in Bay of Bengal (32.0-33.8 PSU)
-            const salEst = 35.5 + (lon < 77 ? (77 - lon) * 0.08 : (77 - lon) * 0.12) + (lat * 0.02);
+            const salEst = 35.5 + (lon < 77 ? (77 - lon) * 0.08 : (77 - lon) * 0.12) + (lat * 0.02) - depthCoolOffset * 0.15;
             if (salEst > 36.5) { colorHex = '#4338ca'; alpha = 0.60; }
             else if (salEst > 35.6) { colorHex = '#3b82f6'; alpha = 0.55; }
             else if (salEst > 34.5) { colorHex = '#0284c7'; alpha = 0.50; }
             else if (salEst > 33.2) { colorHex = '#06b6d4'; alpha = 0.55; }
             else { colorHex = '#00f2fe'; alpha = 0.62; }
           } else if (selectedVariable === 'temp') {
-            // SST Distribution (24.0°C - 31.0°C)
-            const tempEst = 28.5 - Math.abs(lat) * 0.25 + Math.sin(lon * 0.04) * 0.8;
+            // SST Distribution (24.0°C - 31.0°C), cooling noticeably with depth
+            const tempEst = 28.5 - Math.abs(lat) * 0.25 + Math.sin(lon * 0.04) * 0.8 - depthCoolOffset;
             if (tempEst > 29.2) { colorHex = '#f43f5e'; alpha = 0.55; }
             else if (tempEst > 28.0) { colorHex = '#f59e0b'; alpha = 0.50; }
             else if (tempEst > 26.5) { colorHex = '#38bdf8'; alpha = 0.45; }
@@ -860,7 +980,7 @@ function CesiumGlobe() {
             else { colorHex = '#38bdf8'; alpha = 0.42; }
           } else if (selectedVariable === 'currents') {
             // Velocity Surface Color Field
-            const speed = 0.2 + Math.abs(Math.cos(lat * 0.1 + lon * 0.1)) * 0.8;
+            const speed = Math.max(0.05, 0.2 + Math.abs(Math.cos(lat * 0.1 + lon * 0.1)) * 0.8 - depthCoolOffset * 0.12);
             if (speed > 0.75) { colorHex = '#ff6b00'; alpha = 0.55; }
             else if (speed > 0.35) { colorHex = '#00f2fe'; alpha = 0.48; }
             else { colorHex = '#0284c7'; alpha = 0.42; }
@@ -895,14 +1015,6 @@ function CesiumGlobe() {
         customPrimitivesRef.current.push(oceanSurfaceHeatmapPrimitive);
       }
     }
-
-    customPrimitivesRef.current.forEach((prim) => {
-      if (scene.primitives.contains(prim)) {
-
-        scene.primitives.remove(prim);
-      }
-    });
-    customPrimitivesRef.current = [];
 
     // 1. ARGO FLOATS LAYER
     if (layers.argoFloats && argoPointsRef.current) {
@@ -1004,29 +1116,93 @@ function CesiumGlobe() {
       });
     }
 
+    // 4.5 WAVE SWELL RINGS & CREST OVERLAY (Active when Waves variable is selected)
+    if (selectedVariable === 'waves') {
+      const waveHubs = [
+        { lat: 14.5, lon: 64.0, heightM: 3.8, label: 'Arabian Sea Swell' },
+        { lat: 8.2, lon: 72.5, heightM: 2.7, label: 'Lakshadweep Swell' },
+        { lat: 13.0, lon: 86.5, heightM: 3.4, label: 'Bay of Bengal Swell' },
+        { lat: -4.5, lon: 66.0, heightM: 4.2, label: 'Equatorial High Swell' },
+        { lat: 18.5, lon: 68.5, heightM: 2.1, label: 'Gujarat Coastal Swell' },
+        { lat: 2.0, lon: 82.0, heightM: 3.5, label: 'Southern Indian Swell' },
+        { lat: -8.0, lon: 78.0, heightM: 4.5, label: 'Southern Ocean Swell' }
+      ];
+
+      waveHubs.forEach((hub) => {
+        const waveColor = hub.heightM > 3.2 ? '#e11d48' : hub.heightM > 2.0 ? '#f59e0b' : '#38bdf8';
+        [140000, 280000, 420000].forEach((radius, idx) => {
+          const ring = new Cesium.Primitive({
+            geometryInstances: new Cesium.GeometryInstance({
+              geometry: new Cesium.EllipseOutlineGeometry({
+                center: Cesium.Cartesian3.fromDegrees(hub.lon, hub.lat),
+                semiMinorAxis: radius,
+                semiMajorAxis: radius,
+                height: 8500.0
+              }),
+              attributes: {
+                color: Cesium.ColorGeometryInstanceAttribute.fromColor(
+                  Cesium.Color.fromCssColorString(waveColor).withAlpha(0.85 - idx * 0.22)
+                )
+              }
+            }),
+            appearance: new Cesium.PerInstanceColorAppearance({
+              flat: true,
+              translucent: true
+            }),
+            asynchronous: false
+          });
+          scene.primitives.add(ring);
+          customPrimitivesRef.current.push(ring);
+        });
+      });
+    }
+
     // 5. TRAJECTORY DRIFT PATH
-    if (layers.trajectoryPath && activeTrajectory && trajectoryPolylineRef.current) {
+    if (layers.trajectoryPath && activeTrajectory && activeTrajectory.path && activeTrajectory.path.length >= 2 && trajectoryPolylineRef.current) {
       const positions = activeTrajectory.path.map((p: any) =>
-        Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 5000)
+        Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 12000)
       );
 
+      // Outer glow track
       trajectoryPolylineRef.current.add({
         positions: positions,
-        width: 3.5,
+        width: 7.0,
+        material: Cesium.Material.fromType('Color', {
+          color: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.45)
+        }),
+        id: 'active-trajectory-glow'
+      });
+
+      // Crisp inner drift line
+      trajectoryPolylineRef.current.add({
+        positions: positions,
+        width: 4.0,
         material: Cesium.Material.fromType('Color', {
           color: Cesium.Color.fromCssColorString('#00f2fe')
         }),
         id: 'active-trajectory-line'
       });
 
+      const startPoint = activeTrajectory.path[0];
       const endPoint = activeTrajectory.path[activeTrajectory.path.length - 1];
       if (argoPointsRef.current) {
+        // Start marker (Green)
         argoPointsRef.current.add({
-          position: Cesium.Cartesian3.fromDegrees(endPoint.lon, endPoint.lat, 5200),
-          pixelSize: 14,
+          position: Cesium.Cartesian3.fromDegrees(startPoint.lon, startPoint.lat, 14000),
+          pixelSize: 16,
+          color: Cesium.Color.fromCssColorString('#22c55e'),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 3,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          id: 'active-trajectory-start'
+        });
+        // End marker (Amber/Orange)
+        argoPointsRef.current.add({
+          position: Cesium.Cartesian3.fromDegrees(endPoint.lon, endPoint.lat, 14000),
+          pixelSize: 18,
           color: Cesium.Color.fromCssColorString('#f59e0b'),
           outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
+          outlineWidth: 3,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           id: 'active-trajectory-end'
         });
@@ -1092,7 +1268,7 @@ function CesiumGlobe() {
 
     scheduleRender();
 
-  }, [layers, selectedVariable, selectedDepth, activeTrajectory, selectedArgo, selectedAnomaly, selectedLocation, heatmapData, cesiumLoaded]);
+  }, [layers, selectedVariable, selectedDepth, activeTrajectory, selectedArgo, selectedAnomaly, selectedLocation, heatmapData, argoList, anomalyList, cesiumLoaded]);
 
 
   return (

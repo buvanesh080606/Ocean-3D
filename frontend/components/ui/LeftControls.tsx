@@ -244,7 +244,11 @@ export default function LeftControls() {
             {/* 4. TRAJECTORY & PROMINENT AI INSIGHT ACTIONS */}
             <div className="pt-2 border-t-2 border-navy-sky space-y-2">
               <button
-                onClick={() => setTrajectoryModeActive(!trajectoryModeActive)}
+                onClick={() => {
+                  const next = !trajectoryModeActive;
+                  setTrajectoryModeActive(next);
+                  if (next) setActiveDrawer('trajectory');
+                }}
                 className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-xs transition border-2 ${
                   trajectoryModeActive
                     ? 'bg-navy-sky text-navy-deep border-navy-ice shadow-md'
