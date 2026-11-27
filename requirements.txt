@@ -1,0 +1,22 @@
+# OceanTwin 3D - FastAPI backend dependencies
+# Used by Render (see render.yaml). Run from repository root:
+#   uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+
+# Web API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Data & science
+numpy
+pandas
+xarray
+netCDF4
+h5netcdf
+openpyxl
+psutil
+
+# Machine learning
+scikit-learn
+xgboost
+joblib

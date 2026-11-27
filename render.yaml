@@ -1,0 +1,24 @@
+# Render Blueprint - OceanTwin 3D FastAPI backend
+# Render dashboard -> New -> Blueprint -> select this repo.
+# The frontend (Next.js) is deployed separately on Vercel (see DEPLOY.md).
+services:
+  - type: web
+    name: oceantwin-backend
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    # Must run from the repo root: the app imports `backend.*` and reads ./data and ./datasets
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      # Comma-separated list of allowed frontend origins (your Vercel URL, no trailing slash)
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Groq API key for AI insights (https://console.groq.com/keys)
+      - key: GROQ_API_KEY
+        sync: false
