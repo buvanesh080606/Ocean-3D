@@ -188,8 +188,40 @@ function CesiumGlobe() {
         if (typeof window !== 'undefined') {
           (window as any).CESIUM_BASE_URL = '/cesium/';
         }
-        const CesiumModule = await import('cesium');
-        const Cesium = (CesiumModule as any).Viewer ? CesiumModule : ((CesiumModule as any).default || CesiumModule);
+
+        // Load prebuilt static /cesium/Cesium.js directly to avoid huge Next.js webpack chunk timeouts on Vercel
+        const loadStaticCesium = (): Promise<any> =>
+          new Promise((resolve, reject) => {
+            if (typeof window === 'undefined') return reject(new Error('No window'));
+            if ((window as any).Cesium && (window as any).Cesium.Viewer) {
+              return resolve((window as any).Cesium);
+            }
+            const existing = document.querySelector('script[data-cesium-static="true"]') as HTMLScriptElement | null;
+            if (existing) {
+              existing.addEventListener('load', () => resolve((window as any).Cesium));
+              existing.addEventListener('error', () => reject(new Error('Failed to load /cesium/Cesium.js')));
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = '/cesium/Cesium.js';
+            script.async = true;
+            script.setAttribute('data-cesium-static', 'true');
+            script.onload = () => {
+              if ((window as any).Cesium) resolve((window as any).Cesium);
+              else reject(new Error('Cesium global missing after script load'));
+            };
+            script.onerror = () => reject(new Error('Failed to load /cesium/Cesium.js'));
+            document.head.appendChild(script);
+          });
+
+        let Cesium: any;
+        try {
+          Cesium = await loadStaticCesium();
+        } catch {
+          const CesiumModule = await import('cesium');
+          Cesium = (CesiumModule as any).Viewer ? CesiumModule : ((CesiumModule as any).default || CesiumModule);
+        }
+
         cesiumModuleRef.current = Cesium;
         if (typeof window !== 'undefined') {
           (window as any).Cesium = Cesium;
