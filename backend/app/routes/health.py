@@ -9,7 +9,7 @@ from backend.app.schemas import HealthResponse
 router = APIRouter(tags=["Health"])
 
 
-@router.get("/api/health", response_model=HealthResponse)
+@router.api_route("/api/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 async def get_health():
     """Returns liveness, version, and backend data connection mode."""
     return HealthResponse(
