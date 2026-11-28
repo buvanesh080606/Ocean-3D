@@ -304,10 +304,10 @@ function CesiumGlobe() {
         console.log('[CesiumGlobe Diagnostic] Logarithmic Depth Buffer Status:', scene.logarithmicDepthBuffer);
         console.log('[CesiumGlobe Diagnostic] Imagery Layers Count:', viewer.imageryLayers.length);
 
-        viewer.resolutionScale = 1.0;
+        viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.0);
 
         if (Cesium.defined(scene.msaaSamples)) {
-          scene.msaaSamples = 4;
+          scene.msaaSamples = 1;
         }
 
         if (scene.postProcessStages && scene.postProcessStages.fxaa) {
@@ -331,10 +331,10 @@ function CesiumGlobe() {
           scene.skyBox.show = false;
         }
 
-        scene.globe.maximumScreenSpaceError = 1.5;
-        scene.globe.tileCacheSize = 2000;
-        scene.globe.preloadAncestors = true;
-        scene.globe.preloadSiblings = true;
+        scene.globe.maximumScreenSpaceError = 2.5;
+        scene.globe.tileCacheSize = 250;
+        scene.globe.preloadAncestors = false;
+        scene.globe.preloadSiblings = false;
 
         const baseLayer = viewer.imageryLayers.get(0);
         if (baseLayer) {
@@ -762,9 +762,18 @@ function CesiumGlobe() {
       const grid = createSyntheticFallbackGrid(vectors && vectors.length > 0 ? vectors : undefined);
       velocityGridRef.current = grid;
 
-      const PARTICLE_COUNT = selectedVariable === 'currents' ? 2200 : 1400;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      const PARTICLE_COUNT = isMobile
+        ? (selectedVariable === 'currents' ? 320 : 220)
+        : (selectedVariable === 'currents' ? 650 : 420);
       const pool = initializeParticlePool(PARTICLE_COUNT, grid);
       particlePoolRef.current = pool;
+
+      // Pre-allocate Cesium Color instances once (avoids parsing CSS strings thousands of times/sec)
+      const colorSlow = Cesium.Color.fromCssColorString('#00f2fe');
+      const colorMod = Cesium.Color.fromCssColorString('#38bdf8');
+      const colorFast = Cesium.Color.fromCssColorString('#f59e0b');
+      const colorJet = Cesium.Color.fromCssColorString('#f43f5e');
 
       polyCollection.removeAll();
       particlePolylinesRef.current = [];
@@ -778,7 +787,7 @@ function CesiumGlobe() {
           ],
           width: selectedVariable === 'currents' ? 3.2 : 2.4,
           material: Cesium.Material.fromType('Color', {
-            color: Cesium.Color.fromCssColorString('#00f2fe').withAlpha(0.9)
+            color: colorSlow.withAlpha(0.85)
           })
         });
         particlePolylinesRef.current.push(poly);
@@ -787,16 +796,26 @@ function CesiumGlobe() {
       scheduleRender();
     });
 
+    const colorSlowLive = Cesium.Color.fromCssColorString('#00f2fe');
+    const colorModLive = Cesium.Color.fromCssColorString('#38bdf8');
+    const colorFastLive = Cesium.Color.fromCssColorString('#f59e0b');
+    const colorJetLive = Cesium.Color.fromCssColorString('#f43f5e');
+
     let lastTick = performance.now();
 
     const animateParticles = (now: number) => {
       if (!viewerRef.current || viewerRef.current.isDestroyed() || !layers.currentParticles) return;
 
-      const deltaSec = (now - lastTick) / 1000;
+      // Throttle particle advection to ~24 FPS and pause while dragging so globe pan/zoom stays 60 FPS
+      if (isDraggingRef.current || now - lastTick < 42) {
+        particleAnimFrameRef.current = requestAnimationFrame(animateParticles);
+        return;
+      }
+
       lastTick = now;
 
       const speedMultiplier = isPlaying ? (playbackSpeed || 1.0) : 1.0;
-      const stepSeconds = (prefersReducedMotion ? 3600 : 12000) * speedMultiplier;
+      const stepSeconds = (prefersReducedMotion ? 3600 : 14000) * speedMultiplier;
 
       const currentGrid = velocityGridRef.current;
       const pool = particlePoolRef.current;
@@ -807,7 +826,7 @@ function CesiumGlobe() {
           let p = pool[i];
 
           if (!prefersReducedMotion || Math.random() < 0.3) {
-            p = advectParticle(p, currentGrid, stepSeconds, 9);
+            p = advectParticle(p, currentGrid, stepSeconds, 6);
             pool[i] = p;
           }
 
@@ -822,17 +841,19 @@ function CesiumGlobe() {
           if (positions.length >= 2) {
             polys[i].positions = positions;
 
-            // Speed-based colorized velocity gradients matching ScientificLegend
-            let colorHex = '#00f2fe'; // Slow (<0.25 m/s) - Electric Cyan
-            if (p.speed > 0.70) colorHex = '#f43f5e'; // High speed jet (>0.70 m/s) - Bright Coral Red
-            else if (p.speed > 0.45) colorHex = '#f59e0b'; // Moderate-high (0.45-0.70 m/s) - Vibrant Amber
-            else if (p.speed > 0.25) colorHex = '#38bdf8'; // Moderate (0.25-0.45 m/s) - Bright Azure Blue
+            let baseColor = colorSlowLive;
+            if (p.speed > 0.70) baseColor = colorJetLive;
+            else if (p.speed > 0.45) baseColor = colorFastLive;
+            else if (p.speed > 0.25) baseColor = colorModLive;
 
             const speedAlpha = Math.min(0.95, Math.max(0.55, p.speed * 1.4));
             const fadeAlpha = 1.0 - (p.age / p.maxAge);
-            const finalAlpha = Math.min(speedAlpha, fadeAlpha);
+            const finalAlpha = Math.max(0.45, Math.min(speedAlpha, fadeAlpha));
 
-            polys[i].material.uniforms.color = Cesium.Color.fromCssColorString(colorHex).withAlpha(Math.max(0.45, finalAlpha));
+            polys[i].material.uniforms.color.red = baseColor.red;
+            polys[i].material.uniforms.color.green = baseColor.green;
+            polys[i].material.uniforms.color.blue = baseColor.blue;
+            polys[i].material.uniforms.color.alpha = finalAlpha;
           }
         }
         scheduleRender();
