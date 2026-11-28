@@ -136,10 +136,15 @@ export const OceanProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedDepth, setSelectedDepth] = useState<DepthLevel>(0);
 
   const [availableTimeSteps, setAvailableTimeSteps] = useState<string[]>([
-    "2026-08-23T00:00:00Z",
-    "2026-08-23T06:00:00Z",
-    "2026-08-23T12:00:00Z",
-    "2026-08-23T18:00:00Z",
+    "2026-09-01T00:00:00Z",
+    "2026-09-01T06:00:00Z",
+    "2026-09-01T12:00:00Z",
+    "2026-09-01T18:00:00Z",
+    "2026-09-02T00:00:00Z",
+    "2026-09-02T06:00:00Z",
+    "2026-09-02T12:00:00Z",
+    "2026-09-02T18:00:00Z",
+    "2026-09-03T00:00:00Z",
   ]);
   const [availableDepths, setAvailableDepths] = useState<number[]>([0, 10, 25, 50, 100, 250, 500, 1000]);
   const [availableVariables, setAvailableVariables] = useState<string[]>(["temp", "salinity", "currents", "waves"]);
@@ -170,6 +175,18 @@ export const OceanProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [cameraFlyTarget, setCameraFlyTarget] = useState<{ lat: number; lon: number; height: number; pitch?: number; heading?: number } | null>(null);
   const [leftControlsOpen, setLeftControlsOpen] = useState<boolean>(true);
+
+  // Collapse left controls automatically on mobile screens (including resize/orientation change)
+  useEffect(() => {
+    const syncResponsive = () => {
+      if (window.innerWidth < 768) {
+        setLeftControlsOpen(false);
+      }
+    };
+    syncResponsive();
+    window.addEventListener('resize', syncResponsive);
+    return () => window.removeEventListener('resize', syncResponsive);
+  }, []);
 
   const [provenanceMode, setProvenanceMode] = useState<DataProvenanceMode>('DEMO / MOCK DATA');
 
@@ -209,7 +226,19 @@ export const OceanProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setSelectedDatasetId(activeDs.id);
         }
         if (activeDs.time_steps && Array.isArray(activeDs.time_steps) && activeDs.time_steps.length > 0) {
-          setAvailableTimeSteps(activeDs.time_steps);
+          // Sample up to 9 evenly spaced timesteps so the timeline scrubber & loop stay clean and responsive
+          const rawSteps: string[] = activeDs.time_steps;
+          if (rawSteps.length > 9) {
+            const sampled: string[] = [];
+            for (let i = 0; i < 9; i++) {
+              const idx = Math.floor((i * (rawSteps.length - 1)) / 8);
+              sampled.push(rawSteps[idx]);
+            }
+            setAvailableTimeSteps(sampled);
+          } else {
+            setAvailableTimeSteps(rawSteps);
+          }
+          setTimeIndex(0);
         }
         if (activeDs.depth_levels && Array.isArray(activeDs.depth_levels) && activeDs.depth_levels.length > 0) {
           setAvailableDepths(activeDs.depth_levels);
@@ -224,13 +253,13 @@ export const OceanProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Time playback ticker
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isPlaying && availableTimeSteps.length > 0) {
+    if (isPlaying && availableTimeSteps.length > 1) {
       interval = setInterval(() => {
         setTimeIndex((prev) => (prev + 1) % availableTimeSteps.length);
-      }, 2000 / playbackSpeed);
+      }, Math.max(250, Math.round(1400 / playbackSpeed)));
     }
     return () => clearInterval(interval);
-  }, [isPlaying, playbackSpeed, availableTimeSteps]);
+  }, [isPlaying, playbackSpeed, availableTimeSteps.length]);
 
   const resetView = useCallback(() => {
     setZoomAction('reset');
