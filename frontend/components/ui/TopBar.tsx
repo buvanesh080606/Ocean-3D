@@ -17,15 +17,18 @@ export default function TopBar() {
   } = useOcean();
 
   return (
-    <header className="absolute top-2 left-2 right-2 z-50 py-1.5 bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl px-3 flex items-center justify-between gap-2 shadow-panel min-w-0 flex-wrap lg:flex-nowrap">
+    <header className="absolute top-2 left-2 right-2 z-50 h-12 sm:h-auto py-1 sm:py-1.5 bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl px-2 sm:px-3 flex items-center justify-between gap-1.5 sm:gap-2 shadow-panel min-w-0 flex-nowrap">
       {/* Brand & Platform Identity */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-navy-ocean border border-navy-sky flex items-center justify-center shadow-md flex-shrink-0">
-          <Globe className="w-4.5 h-4.5 text-navy-ice" />
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
+        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-navy-ocean border border-navy-sky flex items-center justify-center shadow-md flex-shrink-0">
+          <Globe className="w-4 h-4 text-navy-ice" />
         </div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm sm:text-base font-heading font-bold tracking-wider text-navy-ice uppercase whitespace-nowrap">OceanTwin 3D</h1>
-          <span className="hidden sm:inline-block text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-navy-ocean text-navy-ice border border-navy-sky whitespace-nowrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-xs sm:text-base font-heading font-bold tracking-wider text-navy-ice uppercase whitespace-nowrap">
+            <span className="sm:hidden">OceanTwin</span>
+            <span className="hidden sm:inline">OceanTwin 3D</span>
+          </h1>
+          <span className="hidden md:inline-block text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-navy-ocean text-navy-ice border border-navy-sky whitespace-nowrap">
             v1.0 FRONTEND
           </span>
         </div>
@@ -71,7 +74,7 @@ export default function TopBar() {
         {/* Contextual Action Trigger Buttons */}
         <button
           onClick={() => setActiveDrawer(activeDrawer === 'validation' ? 'none' : 'validation')}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-sans font-semibold transition border-2 flex-shrink-0 ${
+          className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-sans font-semibold transition border-2 flex-shrink-0 ${
             activeDrawer === 'validation'
               ? 'bg-navy-sky text-navy-deep border-navy-ice font-bold shadow-md'
               : 'bg-navy-ocean text-navy-ice border-navy-sky hover:bg-navy-sky hover:text-navy-deep'
@@ -84,7 +87,7 @@ export default function TopBar() {
 
         <button
           onClick={() => setActiveDrawer(activeDrawer === 'report' ? 'none' : 'report')}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-sans font-semibold transition border-2 flex-shrink-0 ${
+          className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-sans font-semibold transition border-2 flex-shrink-0 ${
             activeDrawer === 'report'
               ? 'bg-navy-sky text-navy-deep border-navy-ice font-bold shadow-md'
               : 'bg-navy-ocean text-navy-ice border-navy-sky hover:bg-navy-sky hover:text-navy-deep'

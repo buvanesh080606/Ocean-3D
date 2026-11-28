@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOcean } from '../../context/OceanContext';
 import { ChevronDown, ChevronUp, Info } from 'lucide-react';
 
@@ -13,6 +13,17 @@ interface ColorBand {
 export default function ScientificLegend() {
   const { selectedVariable, selectedDepth, layers, heatmapMode, heatmapVariable } = useOcean();
   const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    const syncLegend = () => {
+      if (window.innerWidth < 768) {
+        setExpanded(false);
+      }
+    };
+    syncLegend();
+    window.addEventListener('resize', syncLegend);
+    return () => window.removeEventListener('resize', syncLegend);
+  }, []);
 
   const getLegendDetails = (): {
     title: string;
@@ -121,7 +132,7 @@ export default function ScientificLegend() {
   const legend = getLegendDetails();
 
   return (
-    <div className="absolute bottom-16 sm:bottom-3 right-3 z-30 w-64 sm:w-72 bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl p-2.5 sm:p-3 shadow-panel text-navy-ice select-none">
+    <div className="absolute bottom-[112px] sm:bottom-3 right-2 sm:right-3 z-30 w-52 sm:w-72 bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl p-2 sm:p-3 shadow-panel text-navy-ice select-none">
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] font-heading font-bold text-navy-ice uppercase tracking-wider">

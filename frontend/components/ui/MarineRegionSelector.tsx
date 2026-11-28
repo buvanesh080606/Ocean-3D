@@ -41,16 +41,16 @@ export default function MarineRegionSelector() {
     <div ref={dropdownRef} className="relative z-50">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-navy-ocean border-2 border-navy-sky hover:bg-navy-sky hover:text-navy-deep text-xs font-semibold text-navy-ice transition"
+        className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-navy-ocean border-2 border-navy-sky hover:bg-navy-sky hover:text-navy-deep text-[11px] sm:text-xs font-semibold text-navy-ice transition"
         title="Select Marine Sea / Ocean Region"
       >
-        <Anchor className="w-3.5 h-3.5" />
-        <span className="truncate max-w-[140px] sm:max-w-[180px] font-sans">{selectedRegion.name}</span>
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <Anchor className="w-3.5 h-3.5 flex-shrink-0" />
+        <span className="truncate max-w-[92px] sm:max-w-[180px] font-sans">{selectedRegion.name}</span>
+        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-72 max-h-96 overflow-y-auto bg-navy-deep border-2 border-navy-sky rounded-xl shadow-panel p-1.5 flex flex-col gap-1 text-xs">
+        <div className="absolute top-full right-0 sm:left-0 mt-2 w-64 sm:w-72 max-w-[calc(100vw-16px)] max-h-80 sm:max-h-96 overflow-y-auto bg-navy-deep border-2 border-navy-sky rounded-xl shadow-panel p-1.5 flex flex-col gap-1 text-xs">
           <div className="px-2.5 py-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-navy-sky border-b border-navy-sky flex items-center gap-1.5">
             <Compass className="w-3 h-3 text-navy-sky" />
             <span>Select Marine Domain / Ocean Surface</span>

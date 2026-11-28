@@ -49,28 +49,48 @@ export default function LeftControls() {
     setSelectedVariable(variable);
   };
 
+  const openDrawerResponsive = (drawer: typeof activeDrawer) => {
+    const next = activeDrawer === drawer ? 'none' : drawer;
+    setActiveDrawer(next);
+    if (next !== 'none' && typeof window !== 'undefined' && window.innerWidth < 768) {
+      setLeftControlsOpen(false);
+    }
+  };
+
   return (
     <aside
-      className={`absolute top-[64px] left-2 z-40 transition-all duration-300 ${
-        leftControlsOpen ? 'w-80 max-w-[calc(100vw-16px)]' : 'w-11'
+      className={`absolute top-[60px] sm:top-[64px] left-2 z-40 transition-all duration-300 ${
+        leftControlsOpen ? 'w-[calc(100vw-16px)] sm:w-80' : 'w-auto'
       }`}
     >
-      <div className="bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl p-3 shadow-panel text-navy-ice max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar">
+      <div className="bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl p-2 sm:p-3 shadow-panel text-navy-ice max-h-[calc(100dvh-165px)] sm:max-h-[calc(100vh-140px)] overflow-y-auto overscroll-contain custom-scrollbar">
         {/* Panel Header & Collapse Toggle */}
-        <div className="flex items-center justify-between border-b-2 border-navy-sky pb-2 mb-3 sticky -top-3 bg-navy-deep/95 backdrop-blur-md pt-1 z-10">
-          {leftControlsOpen && (
+        <div className={`flex items-center justify-between gap-2 ${leftControlsOpen ? 'border-b-2 border-navy-sky pb-2 mb-3 sticky -top-2 sm:-top-3 bg-navy-deep/95 backdrop-blur-md pt-1 z-10' : ''}`}>
+          {leftControlsOpen ? (
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-navy-sky" />
               <h2 className="text-xs font-heading font-bold tracking-wider text-navy-ice uppercase">Scientific Controls</h2>
             </div>
+          ) : (
+            <button
+              onClick={() => setLeftControlsOpen(true)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-navy-ocean hover:bg-navy-sky hover:text-navy-deep text-navy-ice border border-navy-sky text-xs font-semibold transition"
+              title="Expand Controls"
+            >
+              <Sliders className="w-3.5 h-3.5 text-navy-sky" />
+              <span className="sm:hidden">Controls</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           )}
-          <button
-            onClick={() => setLeftControlsOpen(!leftControlsOpen)}
-            className="p-1 rounded bg-navy-ocean hover:bg-navy-sky hover:text-navy-deep text-navy-ice border border-navy-sky transition ml-auto"
-            title={leftControlsOpen ? 'Collapse Controls' : 'Expand Controls'}
-          >
-            {leftControlsOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
+          {leftControlsOpen && (
+            <button
+              onClick={() => setLeftControlsOpen(false)}
+              className="p-1 rounded bg-navy-ocean hover:bg-navy-sky hover:text-navy-deep text-navy-ice border border-navy-sky transition ml-auto"
+              title="Collapse Controls"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {leftControlsOpen && (
@@ -261,7 +281,7 @@ export default function LeftControls() {
 
               {/* PROMINENT AI MODEL INSIGHTS BUTTON */}
               <button
-                onClick={() => setActiveDrawer(activeDrawer === 'explain' ? 'none' : 'explain')}
+                onClick={() => openDrawerResponsive('explain')}
                 className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition border-2 ${
                   activeDrawer === 'explain'
                     ? 'bg-navy-sky text-navy-deep border-navy-ice font-bold shadow-md'
@@ -276,7 +296,7 @@ export default function LeftControls() {
               {/* QUICK SCIENTIFIC ANALYTICS DRAWERS */}
               <div className="grid grid-cols-3 gap-1 pt-1">
                 <button
-                  onClick={() => setActiveDrawer(activeDrawer === 'reliability' ? 'none' : 'reliability')}
+                  onClick={() => openDrawerResponsive('reliability')}
                   className={`py-1 px-1.5 rounded text-[10px] font-mono text-center transition border truncate ${
                     activeDrawer === 'reliability'
                       ? 'bg-navy-sky text-navy-deep font-bold border-navy-ice'
@@ -287,7 +307,7 @@ export default function LeftControls() {
                   🛡️ Reliability
                 </button>
                 <button
-                  onClick={() => setActiveDrawer(activeDrawer === 'argo' ? 'none' : 'argo')}
+                  onClick={() => openDrawerResponsive('argo')}
                   className={`py-1 px-1.5 rounded text-[10px] font-mono text-center transition border truncate ${
                     activeDrawer === 'argo'
                       ? 'bg-navy-sky text-navy-deep font-bold border-navy-ice'
@@ -298,7 +318,7 @@ export default function LeftControls() {
                   📈 Profile
                 </button>
                 <button
-                  onClick={() => setActiveDrawer(activeDrawer === 'bias' ? 'none' : 'bias')}
+                  onClick={() => openDrawerResponsive('bias')}
                   className={`py-1 px-1.5 rounded text-[10px] font-mono text-center transition border truncate ${
                     activeDrawer === 'bias'
                       ? 'bg-navy-sky text-navy-deep font-bold border-navy-ice'

@@ -39,6 +39,9 @@ export default function RightDrawer() {
     selectedArgo,
     selectedAnomaly,
     selectedLocation,
+    setSelectedLocation,
+    fetchLocationProperties,
+    formattedCurrentTime,
     activeTrajectory,
     setActiveTrajectory,
     trajectoryDuration,
@@ -82,10 +85,11 @@ export default function RightDrawer() {
 
     // List of active verified Groq production models
     const candidateModels = [
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.8-27b',
       'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'mixtral-8x7b-32768',
-      'deepseek-r1-distill-llama-70b'
+      'llama-3.1-8b-instant'
     ];
 
 
@@ -106,15 +110,15 @@ export default function RightDrawer() {
             messages: [
               {
                 role: 'system',
-                content: 'You are OceanTwin AI, an expert scientific oceanographer and machine learning specialist. Analyze the oceanographic coordinates, model values, salinity, currents, and XGBoost bias correction details provided. Give a concise, professional 3-4 sentence analysis.'
+                content: 'You are OceanTwin AI (INCOIS Indian Ocean specialist), an expert scientific oceanographer and machine learning researcher focused on the seas surrounding India (Arabian Sea, Bay of Bengal, Laccadive Sea, Andaman Sea, Gulf of Mannar, and Indian Ocean). Analyze the specific Indian marine basin, coordinates, monsoon/coastal physics, salinity/thermal dynamics, currents, and XGBoost bias correction details provided. Give a concise, complete 3-4 sentence analysis.'
               },
               {
                 role: 'user',
-                content: `Region: ${selectedLocation.regionName} (Lat: ${selectedLocation.lat}°N, Lon: ${selectedLocation.lon}°E). Selected Variable: ${selectedVariable} at depth ${selectedDepth}m. Temperature: ${locationProperties?.temperatureC || 28.4}°C, Salinity: ${locationProperties?.salinityPsu || 35.2} PSU, Current Speed: ${locationProperties?.currentSpeedMps || 0.42} m/s. Raw Model Error: ${locationProperties?.predictedBiasTemp || -0.45}°C, XGBoost Corrected: ${locationProperties?.correctedModelTemp || 27.98}°C. Explain the ocean physics and AI bias correction.`
+                content: `Indian Marine Basin / Region: ${selectedLocation.regionName} (Lat: ${selectedLocation.lat}°N, Lon: ${selectedLocation.lon}°E). Selected Variable: ${selectedVariable} at depth ${selectedDepth}m. Temperature: ${locationProperties?.temperatureC ?? 28.4}°C, Salinity: ${locationProperties?.salinityPsu ?? 35.2} PSU, Current Speed: ${locationProperties?.currentSpeedMps ?? 0.42} m/s. Raw Model Error: ${locationProperties?.predictedBiasTemp ?? -0.45}°C, XGBoost Corrected: ${locationProperties?.correctedModelTemp ?? 27.98}°C. Explain the regional ocean physics around India for this exact location and how the XGBoost bias correction improves accuracy.`
               }
             ],
             temperature: 0.5,
-            max_tokens: 300
+            max_tokens: 600
           })
         });
 
@@ -146,15 +150,29 @@ export default function RightDrawer() {
     setGroqLoading(false);
   };
 
-  // Auto-generate Groq insight when explain drawer opens if key is present
+  // Auto-generate Groq insight when explain drawer opens or location/variable/depth changes
   useEffect(() => {
-    if (activeDrawer === 'explain' && !groqInsight && !groqLoading) {
-      const activeKey = groqApiKey || process.env.NEXT_PUBLIC_GROQ_API_KEY || '';
-      if (activeKey) {
-        generateGroqInsight();
-      }
-    }
-  }, [activeDrawer, groqApiKey]);
+    if (activeDrawer !== 'explain') return;
+    const activeKey = groqApiKey || process.env.NEXT_PUBLIC_GROQ_API_KEY || '';
+    if (!activeKey) return;
+
+    setGroqInsight(null);
+    const timer = setTimeout(() => {
+      generateGroqInsight();
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [
+    activeDrawer,
+    groqApiKey,
+    selectedLocation.lat,
+    selectedLocation.lon,
+    selectedLocation.regionName,
+    selectedVariable,
+    selectedDepth,
+    locationProperties?.temperatureC,
+    locationProperties?.salinityPsu
+  ]);
 
   // Fetch real data on drawer mount or state change
 
@@ -225,7 +243,7 @@ export default function RightDrawer() {
   const currentAnomaly = selectedAnomaly || DEMO_ANOMALIES[0];
 
   return (
-    <aside className="absolute top-[72px] right-3 bottom-3 z-50 w-[calc(100%-24px)] max-w-md bg-navy-deep border-2 border-navy-sky rounded-xl p-3.5 sm:p-4 shadow-panel text-navy-ice overflow-y-auto flex flex-col justify-between select-none">
+    <aside className="absolute top-[60px] sm:top-[72px] left-2 right-2 sm:left-auto sm:right-3 bottom-2 sm:bottom-3 z-50 w-auto sm:w-[calc(100%-24px)] sm:max-w-md bg-navy-deep/95 backdrop-blur-md border-2 border-navy-sky rounded-xl p-3 sm:p-4 shadow-panel text-navy-ice overflow-y-auto overscroll-contain flex flex-col justify-between select-none">
       {/* Drawer Header */}
       <div>
         <div className="flex items-center justify-between border-b border-navy-ocean/50 pb-3 mb-4">
@@ -603,23 +621,68 @@ export default function RightDrawer() {
               </p>
             </div>
 
-            {/* CLEAN REGIONAL AI OCEANOGRAPHIC INSIGHT CARD */}
-            {(groqInsight || insightData?.summary) && (
-              <div className="p-3 rounded-xl bg-navy-darker border border-cyan-500/40 space-y-2 shadow-md">
-                <div className="flex items-center justify-between font-heading font-bold text-cyan-300 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-cyan-400" />
-                    <span>REGIONAL OCEAN INSIGHT</span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-700 uppercase">
-                    {insightData?.isLlmConnected ? 'Groq .env Active' : 'AI Analysis'}
-                  </span>
-                </div>
-                <p className="text-navy-ice leading-relaxed font-sans text-[11px]">
-                  {groqInsight || insightData?.summary}
-                </p>
+            {/* SEAS AROUND INDIA QUICK SELECTOR */}
+            <div className="p-2.5 rounded-xl bg-navy-ocean/70 border border-navy-sky/50 space-y-2">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-navy-sky">
+                Seas Around India — Quick AI Insights
               </div>
-            )}
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { name: 'Arabian Sea', region: 'Arabian Sea (West Coast of India)', lat: 15.42, lon: 68.12, h: 3500000 },
+                  { name: 'Bay of Bengal', region: 'Bay of Bengal (East Coast of India)', lat: 14.5, lon: 88.5, h: 3500000 },
+                  { name: 'Laccadive Sea', region: 'Laccadive / Lakshadweep Sea (SW India)', lat: 9.5, lon: 74.5, h: 2400000 },
+                  { name: 'Andaman Sea', region: 'Andaman Sea (Andaman & Nicobar, India)', lat: 10.5, lon: 94.5, h: 2600000 },
+                  { name: 'Gulf of Mannar', region: 'Gulf of Mannar & Palk Strait (India)', lat: 8.8, lon: 79.0, h: 1800000 },
+                  { name: 'Indian Ocean', region: 'Equatorial Indian Ocean (South of India)', lat: 2.5, lon: 78.0, h: 5000000 },
+                ].map((sea) => (
+                  <button
+                    key={sea.name}
+                    onClick={() => {
+                      setSelectedLocation({
+                        lat: sea.lat,
+                        lon: sea.lon,
+                        regionName: sea.region,
+                        seaDepthM: 3200
+                      });
+                      fetchLocationProperties(sea.lat, sea.lon, selectedDepth, formattedCurrentTime);
+                      flyToLocation(sea.lat, sea.lon, sea.h, -90, 0);
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-mono text-left border transition truncate ${
+                      selectedLocation.regionName.toLowerCase().includes(sea.name.toLowerCase())
+                        ? 'bg-navy-sky text-navy-deep font-bold border-navy-ice'
+                        : 'bg-navy-darker text-navy-ice border-navy-sky/40 hover:bg-navy-sky hover:text-navy-deep'
+                    }`}
+                  >
+                    🌊 {sea.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* CLEAN REGIONAL AI OCEANOGRAPHIC INSIGHT CARD */}
+            <div className="p-3 rounded-xl bg-navy-darker border border-cyan-500/40 space-y-2 shadow-md">
+              <div className="flex items-center justify-between font-heading font-bold text-cyan-300 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-cyan-400" />
+                  <span>REGIONAL OCEAN INSIGHT</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-700 uppercase">
+                  {groqLoading ? 'Analyzing...' : (groqInsight || insightData?.isLlmConnected) ? 'Groq Live' : 'AI Analysis'}
+                </span>
+              </div>
+              {groqLoading ? (
+                <p className="text-cyan-300/80 animate-pulse font-mono text-[11px]">
+                  Generating live Groq AI insight for {selectedLocation.regionName}...
+                </p>
+              ) : (
+                <p className="text-navy-ice leading-relaxed font-sans text-[11px]">
+                  {groqInsight || insightData?.summary || 'Click any Indian sea above or on the 3D globe to generate an AI insight.'}
+                </p>
+              )}
+              {groqError && (
+                <p className="text-amber-400 font-mono text-[10px]">{groqError}</p>
+              )}
+            </div>
 
 
             {/* MODEL ERROR HEATMAP INSPECTOR CARD */}
