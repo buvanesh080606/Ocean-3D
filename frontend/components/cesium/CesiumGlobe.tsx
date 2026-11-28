@@ -330,55 +330,66 @@ function CesiumGlobe() {
 
         const controller = scene.screenSpaceCameraController;
         controller.enableRotate = true;
-        controller.enableTranslate = true;
+        controller.enableTranslate = false;
         controller.enableZoom = true;
-        controller.enableTilt = true;
+        controller.enableTilt = false;
         controller.enableLook = false;
         controller.enableCollisionDetection = true;
-        controller.minimumZoomDistance = 500;
-        controller.maximumZoomDistance = 35000000;
-        controller.minimumPitch = Cesium.Math.toRadians(-88);
-        controller.maximumPitch = Cesium.Math.toRadians(-5);
+        controller.minimumZoomDistance = 200000;
+        controller.maximumZoomDistance = 22000000;
         
         controller.inertiaSpin = 0.85;
-        controller.inertiaTranslate = 0.85;
-        controller.inertiaZoom = 0.85;
+        controller.inertiaTranslate = 0.0;
+        controller.inertiaZoom = 0.8;
 
         controller.rotateEventTypes = [
           Cesium.CameraEventType.LEFT_DRAG
         ];
-        controller.translateEventTypes = [
-          Cesium.CameraEventType.RIGHT_DRAG
-        ];
         controller.zoomEventTypes = [
+          Cesium.CameraEventType.RIGHT_DRAG,
           Cesium.CameraEventType.MIDDLE_DRAG,
           Cesium.CameraEventType.WHEEL,
           Cesium.CameraEventType.PINCH
         ];
-        controller.tiltEventTypes = [
-          { eventType: Cesium.CameraEventType.RIGHT_DRAG, modifier: Cesium.KeyboardEventModifier.CTRL },
-          { eventType: Cesium.CameraEventType.LEFT_DRAG, modifier: Cesium.KeyboardEventModifier.CTRL }
-        ];
+        controller.tiltEventTypes = [];
+
+        // Keep Earth centered and upright so rotating/zooming out never loses the globe
+        viewer.camera.constrainedAxis = Cesium.Cartesian3.UNIT_Z;
 
         const updateFrustumAndRender = () => {
           if (!viewer || viewer.isDestroyed()) return;
-          const cameraHeight = viewer.camera.positionCartographic
-            ? viewer.camera.positionCartographic.height
-            : 10000000;
-          
-          viewer.camera.frustum.near = Math.max(0.1, cameraHeight * 0.0001);
+          const carto = viewer.camera.positionCartographic;
+          const cameraHeight = carto ? carto.height : 10000000;
+
+          // Keep camera aimed straight at Earth's center when zoomed out
+          if (carto && Math.abs(viewer.camera.pitch + Cesium.Math.PI_OVER_TWO) > 0.08 && cameraHeight > 4500000) {
+            viewer.camera.setView({
+              destination: Cesium.Cartesian3.fromRadians(
+                carto.longitude,
+                carto.latitude,
+                Math.min(cameraHeight, 22000000)
+              ),
+              orientation: {
+                heading: 0,
+                pitch: -Cesium.Math.PI_OVER_TWO,
+                roll: 0
+              }
+            });
+          }
+
+          viewer.camera.frustum.near = Math.max(1.0, cameraHeight * 0.0001);
           viewer.camera.frustum.far = Math.max(50000000.0, cameraHeight * 5.0);
-          
+
           scheduleRender();
         };
 
         viewer.camera.changed.addEventListener(updateFrustumAndRender);
 
         viewer.camera.setView({
-          destination: Cesium.Cartesian3.fromDegrees(75.0, 15.0, 18000000),
+          destination: Cesium.Cartesian3.fromDegrees(78.0, 14.0, 14000000),
           orientation: {
             heading: Cesium.Math.toRadians(0),
-            pitch: Cesium.Math.toRadians(-85),
+            pitch: Cesium.Math.toRadians(-90),
             roll: 0
           }
         });
@@ -508,10 +519,23 @@ function CesiumGlobe() {
             const lon = Number(Cesium.Math.toDegrees(cartographic.longitude).toFixed(4));
             const lat = Number(Cesium.Math.toDegrees(cartographic.latitude).toFixed(4));
 
+            const identifyIndianSeaRegion = (lt: number, ln: number): string => {
+              if (lt >= 22.0 && lt <= 23.5 && ln >= 68.0 && ln <= 70.8) return 'Gulf of Kutch (Arabian Sea, India)';
+              if (lt >= 20.0 && lt <= 22.4 && ln >= 71.5 && ln <= 73.2) return 'Gulf of Khambhat (Arabian Sea, India)';
+              if (lt >= 7.5 && lt <= 10.6 && ln >= 77.5 && ln <= 80.5) return 'Gulf of Mannar & Palk Strait (India)';
+              if (lt >= 6.0 && lt <= 13.0 && ln >= 71.5 && ln <= 77.6) return 'Laccadive / Lakshadweep Sea (SW India)';
+              if (lt >= 6.0 && lt <= 15.8 && ln >= 92.5 && ln <= 98.5) return 'Andaman Sea (Andaman & Nicobar, India)';
+              if (lt >= 6.0 && lt <= 23.0 && ln >= 80.0 && ln <= 92.5) return 'Bay of Bengal (East Coast of India)';
+              if (lt >= 6.0 && lt <= 26.0 && ln >= 55.0 && ln <= 77.5) return 'Arabian Sea (West Coast of India)';
+              if (lt >= -5.0 && lt < 6.0 && ln >= 55.0 && ln <= 98.0) return 'Equatorial Indian Ocean (South of India)';
+              if (lt >= -40.0 && lt < -5.0 && ln >= 40.0 && ln <= 110.0) return 'Southern Indian Ocean';
+              return `Ocean Sector (${lt >= 0 ? lt + '°N' : Math.abs(lt) + '°S'}, ${ln >= 0 ? ln + '°E' : Math.abs(ln) + '°W'})`;
+            };
+
             setSelectedLocation({
               lat,
               lon,
-              regionName: `Ocean Sector (${lat >= 0 ? lat + '°N' : Math.abs(lat) + '°S'}, ${lon >= 0 ? lon + '°E' : Math.abs(lon) + '°W'})`,
+              regionName: identifyIndianSeaRegion(lat, lon),
               seaDepthM: Math.floor(2500 + Math.random() * 1500)
             });
 
@@ -603,44 +627,7 @@ function CesiumGlobe() {
     };
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // 2. AUTO-ROTATE LOGIC
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed() || !cesiumLoaded) return;
-    const Cesium = (window as any).Cesium;
-    if (!Cesium) return;
-
-    let removeTickListener: (() => void) | null = null;
-
-    if (autoRotate) {
-      lastTimeRef.current = performance.now();
-
-      const onTick = () => {
-        if (!viewer || viewer.isDestroyed() || isFlyingRef.current || isDraggingRef.current) return;
-        const now = performance.now();
-        const deltaSec = (now - lastTimeRef.current) / 1000;
-        lastTimeRef.current = now;
-
-        if (deltaSec > 0 && deltaSec < 0.1) {
-          viewer.camera.rotate(Cesium.Cartesian3.UNIT_Z, 0.05 * deltaSec);
-          scheduleRender();
-        }
-      };
-
-      viewer.clock.onTick.addEventListener(onTick);
-      removeTickListener = () => {
-        viewer.clock.onTick.removeEventListener(onTick);
-      };
-    }
-
-    scheduleRender();
-
-    return () => {
-      if (removeTickListener) removeTickListener();
-    };
-  }, [autoRotate, cesiumLoaded]);
+  // Auto-rotation intentionally removed to keep focus steady on Indian Ocean basins
 
   // ---------------------------------------------------------------------------
   // 3. SMOOTH CAMERA PRESET FLY-TO TRANSITIONS
@@ -653,8 +640,9 @@ function CesiumGlobe() {
     const Cesium = (window as any).Cesium;
     if (!Cesium) return;
 
-    const heading = cameraFlyTarget.heading !== undefined ? cameraFlyTarget.heading : 0;
-    const pitch = cameraFlyTarget.pitch !== undefined ? cameraFlyTarget.pitch : -40;
+    const heading = 0;
+    const pitch = -90;
+    const clampedHeight = Math.min(Math.max(cameraFlyTarget.height, 250000), 22000000);
 
     isFlyingRef.current = true;
 
@@ -662,7 +650,7 @@ function CesiumGlobe() {
       destination: Cesium.Cartesian3.fromDegrees(
         cameraFlyTarget.lon,
         cameraFlyTarget.lat,
-        cameraFlyTarget.height
+        clampedHeight
       ),
       orientation: {
         heading: Cesium.Math.toRadians(heading),
