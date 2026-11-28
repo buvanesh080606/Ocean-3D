@@ -640,10 +640,11 @@ def _query_groq_llm(prompt: str) -> Optional[str]:
         return None
 
     candidate_models = [
-        "llama-3.1-8b-instant",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b",
         "llama-3.3-70b-versatile",
-        "mixtral-8x7b-32768",
-        "deepseek-r1-distill-llama-70b"
+        "llama-3.1-8b-instant"
     ]
 
     for model in candidate_models:
@@ -661,7 +662,7 @@ def _query_groq_llm(prompt: str) -> Optional[str]:
                     }
                 ],
                 "temperature": 0.5,
-                "max_tokens": 300
+                "max_tokens": 600
             }).encode("utf-8")
 
             req = urllib.request.Request(
@@ -669,7 +670,8 @@ def _query_groq_llm(prompt: str) -> Optional[str]:
                 data=req_data,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
+                    "Authorization": f"Bearer {api_key}",
+                    "User-Agent": "OceanTwin3D/1.0"
                 },
                 method="POST"
             )
